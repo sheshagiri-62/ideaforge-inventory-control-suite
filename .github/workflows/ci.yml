@@ -1,0 +1,256 @@
+name: IMS CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - '**'  # Trigger on push to any branch
+  pull_request:
+    branches:
+      - main  # Trigger on PR to main
+
+jobs:
+  # ========================================
+  # STAGE 1: Build
+  # ========================================
+  build:
+    name: "Stage 1 - Build"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Display Python version
+        run: |
+          python --version
+          pip --version
+      
+      - name: Install production dependencies
+        run: |
+          echo "Installing production dependencies..."
+          pip install -r requirements.txt
+      
+      - name: Install development dependencies
+        run: |
+          echo "Installing development dependencies..."
+          pip install -r requirements-dev.txt
+      
+      - name: Display installed packages
+        run: |
+          echo "Installed packages:"
+          pip list
+      
+      - name: Display project folder structure
+        run: |
+          echo "Project folder structure:"
+          find . -type f -not -path '*/\.git/*' | sort
+
+  # ========================================
+  # STAGE 2: Test (ALL TEST CASES)
+  # ========================================
+  test:
+    name: "Stage 2 - Test (ALL Tests)"
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      
+      - name: Run ALL tests (unit + integration + system)
+        run: |
+          echo "Running ALL test cases..."
+          pytest tests/ -v --tb=short --junit-xml=reports/test-results.xml
+      
+      - name: Display test summary
+        if: always()
+        run: |
+          echo "Test execution completed"
+          if [ -f reports/test-results.xml ]; then
+            echo "Test results generated successfully"
+          fi
+      
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: reports/test-results.xml
+          retention-days: 90
+
+  # ========================================
+  # STAGE 3: Coverage (APPLY TO ALL CODE)
+  # ========================================
+  coverage:
+    name: "Stage 3 - Coverage (ALL Code)"
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      
+      - name: Run coverage on ALL source code
+        run: |
+          echo "Running coverage analysis on src/**/*.py..."
+          pytest --cov=src --cov-report=html --cov-report=term --cov-report=xml --cov-fail-under=74 tests/
+      
+      - name: Display coverage summary
+        if: always()
+        run: |
+          echo "Coverage analysis completed"
+          if [ -f coverage.xml ]; then
+            echo "Coverage report generated successfully"
+          fi
+      
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-html
+          path: htmlcov/
+          retention-days: 90
+      
+      - name: Upload XML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-xml
+          path: coverage.xml
+          retention-days: 90
+
+  # ========================================
+  # STAGE 4: Lint (APPLY TO ALL MODULES)
+  # ========================================
+  lint:
+    name: "Stage 4 - Lint (ALL Modules)"
+    runs-on: ubuntu-latest
+    needs: coverage
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      
+      - name: Create reports directory
+        run: mkdir -p reports
+      
+      - name: Run pylint on ALL source modules
+        run: |
+          echo "Running pylint on src/**/*.py..."
+          pylint src/ --rcfile=.pylintrc --output-format=text | tee reports/pylint-report.txt
+          pylint src/ --rcfile=.pylintrc --exit-zero --score=y > reports/pylint-score.txt
+      
+      - name: Check pylint score threshold
+        run: |
+          echo "Checking pylint score threshold (must be >= 7.5)..."
+          SCORE=$(grep -oP 'rated at \K[0-9.]+' reports/pylint-score.txt | head -1)
+          echo "Pylint score: $SCORE/10"
+          if (( $(echo "$SCORE < 7.5" | bc -l) )); then
+            echo "ERROR: Pylint score $SCORE is below threshold 7.5"
+            exit 1
+          else
+            echo "SUCCESS: Pylint score $SCORE meets threshold"
+          fi
+      
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pylint-report
+          path: reports/pylint-*.txt
+          retention-days: 90
+
+  # ========================================
+  # STAGE 5: Security Scan (APPLY TO ALL CODE)
+  # ========================================
+  security:
+    name: "Stage 5 - Security Scan (ALL Code)"
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      
+      - name: Create reports directory
+        run: mkdir -p reports
+      
+      - name: Run Bandit security scan on ALL code
+        run: |
+          echo "Running Bandit security scan recursively on src/..."
+          bandit -r src/ -f txt -o reports/bandit-report.txt || true
+          bandit -r src/ -f json -o reports/bandit-report.json || true
+      
+      - name: Check for high severity issues
+        run: |
+          echo "Checking for high severity security issues..."
+          HIGH_ISSUES=$(bandit -r src/ -f json | grep -c '"issue_severity": "HIGH"' || echo "0")
+          echo "High severity issues found: $HIGH_ISSUES"
+          if [ "$HIGH_ISSUES" -gt 0 ]; then
+            echo "ERROR: Found $HIGH_ISSUES high severity security issues"
+            exit 1
+          else
+            echo "SUCCESS: No high severity security issues found"
+          fi
+      
+      - name: Display security scan summary
+        if: always()
+        run: |
+          echo "Security scan completed"
+          if [ -f reports/bandit-report.txt ]; then
+            echo "Security report generated successfully"
+            cat reports/bandit-report.txt
+          fi
+      
+      - name: Upload security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: reports/bandit-report.*
+          retention-days: 90

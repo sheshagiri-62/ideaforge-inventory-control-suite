@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IdeaForge | Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body class="login-body">
+    <div class="login-shell">
+      <div class="auth-card panel">
+        <div class="brand-block auth-brand">
+          <div class="brand-mark">IF</div>
+          <div>
+            <p class="brand-kicker">Portfolio project</p>
+            <h1>IdeaForge</h1>
+          </div>
+        </div>
+
+        <h2>Admin Login</h2>
+
+        <form method="post" action="{{ url_for('login') }}" class="stack-form">
+          <label>
+            Username
+            <input type="text" name="username" placeholder="admin" required />
+          </label>
+          <label>
+            Password
+            <input type="password" name="password" placeholder="Password" required />
+          </label>
+          <button type="submit" class="primary-btn full-width">Login</button>
+        </form>
+
+        {% if error %}
+          <p class="form-message error-text">{{ error }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </body>
+</html>
